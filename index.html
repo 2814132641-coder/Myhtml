@@ -3,326 +3,542 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>粒子爆炸特效</title>
+    <title>能量粒子爆发</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
             min-height: 100vh;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            background: radial-gradient(ellipse at center, #0a0a1a 0%, #000005 100%);
             overflow: hidden;
             font-family: 'Segoe UI', sans-serif;
-            cursor: pointer;
+            cursor: crosshair;
         }
 
-        /* Three.js 画布 */
-        #particle-canvas {
+        #scene-canvas {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
             z-index: 1;
         }
 
-        /* 主标题 */
         .title {
             position: absolute;
-            top: 50%;
-            left: 50%;
+            top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            color: #fff;
-            font-size: 2rem;
+            color: rgba(120, 200, 255, 0.6);
+            font-size: 1.8rem;
+            font-weight: 300;
+            letter-spacing: 0.3em;
             text-align: center;
             z-index: 10;
-            text-shadow: 0 0 10px rgba(255, 105, 180, 0.8);
+            pointer-events: none;
+            text-shadow: 0 0 20px rgba(0, 150, 255, 0.5), 0 0 40px rgba(0, 100, 255, 0.3);
+            animation: titlePulse 3s ease-in-out infinite;
+        }
+
+        @keyframes titlePulse {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 0.9; }
+        }
+
+        .hint {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(100, 180, 255, 0.3);
+            font-size: 0.85rem;
+            letter-spacing: 0.15em;
+            z-index: 10;
             pointer-events: none;
         }
     </style>
 </head>
 <body>
-    <canvas id="particle-canvas"></canvas>
-    <div class="title">点击屏幕，释放粒子 ✨</div>
+    <canvas id="scene-canvas"></canvas>
+    <div class="title">ENERGY CORE</div>
+    <div class="hint">CLICK TO DISCHARGE</div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
-        // ============ 配置参数 ============
-        const CONFIG = {
-            // 爆炸粒子
-            explosionCount: 120,        // 每次爆炸粒子数
-            explosionSpeed: 8,          // 爆炸初始速度
-            explosionLife: 2.0,         // 粒子生命周期(秒)
-            gravity: -9.8,              // 重力加速度
-            damping: 0.98,              // 速度阻尼
+    (function() {
+        'use strict';
 
-            // 背景粒子
-            bgParticleCount: 200,       // 背景粒子数量
-            bgSpeed: 0.3,               // 背景粒子漂浮速度
-
-            // 颜色调色板（暖色调，与原爱心配色呼应）
-            palette: [
-                0xff6b6b, 0xff8e8e, 0xffa8a8,
-                0xffc0cb, 0xff69b4, 0xff1493,
-                0xff4500, 0xff6347, 0xff7f50,
-                0xffd700, 0xffe4b5, 0xf0e68c,
-                0xffffff, 0xffd1dc
-            ]
+        // ============ 配置 ============
+        const CFG = {
+            explosionParticles: 400,
+            trailParticles: 200,
+            sparkParticles: 150,
+            shockwaveCount: 3,
+            bgParticles: 300,
+            maxParticles: 3000,
         };
 
-        // ============ Three.js 场景搭建 ============
-        const canvas = document.getElementById('particle-canvas');
+        // 科幻能量色调
+        const ENERGY_COLORS = [
+            new THREE.Color(0x00ffff),  // 青色
+            new THREE.Color(0x0088ff),  // 蓝色
+            new THREE.Color(0x4400ff),  // 紫色
+            new THREE.Color(0x00ffaa),  // 青绿
+            new THREE.Color(0xffffff),  // 白热
+            new THREE.Color(0x8844ff),  // 粉紫
+        ];
+
+        // ============ Three.js 初始化 ============
+        const canvas = document.getElementById('scene-canvas');
         const renderer = new THREE.WebGLRenderer({
-            canvas: canvas,
-            alpha: true,
-            antialias: true
+            canvas, alpha: true, antialias: true, powerPreference: 'high-performance'
         });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
         const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(
-            75,
-            window.innerWidth / window.innerHeight,
-            0.1,
-            1000
-        );
-        camera.position.z = 5;
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.z = 6;
 
-        // ============ 粒子纹理（柔和圆点） ============
-        function createParticleTexture() {
-            const canvas = document.createElement('canvas');
-            canvas.width = canvas.height = 64;
-            const ctx = canvas.getContext('2d');
-            const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-            gradient.addColorStop(0, 'rgba(255,255,255,1)');
-            gradient.addColorStop(0.3, 'rgba(255,255,255,0.8)');
-            gradient.addColorStop(0.6, 'rgba(255,255,255,0.3)');
-            gradient.addColorStop(1, 'rgba(255,255,255,0)');
-            ctx.fillStyle = gradient;
-            ctx.fillRect(0, 0, 64, 64);
-            return new THREE.CanvasTexture(canvas);
+        // 世界坐标范围
+        const WORLD_W = 16;
+        const WORLD_H = 10;
+
+        // ============ 工具函数 ============
+        function rand(min, max) { return min + Math.random() * (max - min); }
+        function randColor() { return ENERGY_COLORS[Math.floor(Math.random() * ENERGY_COLORS.length)].clone(); }
+        function lerp(a, b, t) { return a + (b - a) * t; }
+
+        // ============ 粒子纹理生成器 ============
+        function createGlowTexture() {
+            const size = 128;
+            const c = document.createElement('canvas');
+            c.width = c.height = size;
+            const ctx = c.getContext('2d');
+            const g = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+            g.addColorStop(0, 'rgba(255,255,255,1)');
+            g.addColorStop(0.1, 'rgba(255,255,255,0.9)');
+            g.addColorStop(0.25, 'rgba(200,220,255,0.6)');
+            g.addColorStop(0.5, 'rgba(100,150,255,0.2)');
+            g.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, size, size);
+            return new THREE.CanvasTexture(c);
         }
 
-        const particleTexture = createParticleTexture();
-
-        // ============ 粒子系统 ============
-        // 使用对象池管理所有粒子
-        const MAX_PARTICLES = 2000;
-
-        // 粒子数据数组
-        const positions = new Float32Array(MAX_PARTICLES * 3);
-        const colors = new Float32Array(MAX_PARTICLES * 3);
-        const sizes = new Float32Array(MAX_PARTICLES);
-        const opacities = new Float32Array(MAX_PARTICLES);
-
-        // 粒子状态数组
-        const velocities = new Float32Array(MAX_PARTICLES * 3);
-        const life = new Float32Array(MAX_PARTICLES);
-        const maxLife = new Float32Array(MAX_PARTICLES);
-        const active = new Uint8Array(MAX_PARTICLES);
-
-        // 初始化所有粒子为隐藏状态
-        for (let i = 0; i < MAX_PARTICLES; i++) {
-            opacities[i] = 0;
-            sizes[i] = 0;
-            active[i] = 0;
+        function createSparkTexture() {
+            const size = 32;
+            const c = document.createElement('canvas');
+            c.width = c.height = size;
+            const ctx = c.getContext('2d');
+            const g = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+            g.addColorStop(0, 'rgba(255,255,255,1)');
+            g.addColorStop(0.4, 'rgba(255,255,255,0.5)');
+            g.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, size, size);
+            return new THREE.CanvasTexture(c);
         }
 
-        // 创建 BufferGeometry
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-        geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
-        geometry.setAttribute('opacity', new THREE.BufferAttribute(opacities, 1));
+        function createRingTexture() {
+            const size = 256;
+            const c = document.createElement('canvas');
+            c.width = c.height = size;
+            const ctx = c.getContext('2d');
+            const g = ctx.createRadialGradient(size/2, size/2, size*0.35, size/2, size/2, size*0.5);
+            g.addColorStop(0, 'rgba(0,0,0,0)');
+            g.addColorStop(0.5, 'rgba(0,200,255,0.8)');
+            g.addColorStop(0.7, 'rgba(0,150,255,0.4)');
+            g.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, size, size);
+            return new THREE.CanvasTexture(c);
+        }
 
-        // 自定义着色器材质（支持透明度和大小衰减）
-        const material = new THREE.ShaderMaterial({
-            uniforms: {
-                pointTexture: { value: particleTexture }
-            },
-            vertexShader: `
-                attribute float size;
-                attribute float opacity;
-                varying vec3 vColor;
-                varying float vOpacity;
-                void main() {
-                    vColor = color;
-                    vOpacity = opacity;
-                    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-                    gl_PointSize = size * (300.0 / -mvPosition.z);
-                    gl_Position = projectionMatrix * mvPosition;
+        function createFlashTexture() {
+            const size = 256;
+            const c = document.createElement('canvas');
+            c.width = c.height = size;
+            const ctx = c.getContext('2d');
+            const g = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+            g.addColorStop(0, 'rgba(255,255,255,1)');
+            g.addColorStop(0.1, 'rgba(200,230,255,0.95)');
+            g.addColorStop(0.3, 'rgba(0,150,255,0.6)');
+            g.addColorStop(0.6, 'rgba(100,0,255,0.2)');
+            g.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, size, size);
+            return new THREE.CanvasTexture(c);
+        }
+
+        const glowTex = createGlowTexture();
+        const sparkTex = createSparkTexture();
+        const ringTex = createRingTexture();
+        const flashTex = createFlashTexture();
+
+        // ============ 粒子池 ============
+        class ParticlePool {
+            constructor(maxCount, texture, blending) {
+                this.maxCount = maxCount;
+                this.positions = new Float32Array(maxCount * 3);
+                this.colors = new Float32Array(maxCount * 3);
+                this.sizes = new Float32Array(maxCount);
+                this.opacities = new Float32Array(maxCount);
+                this.velocities = new Float32Array(maxCount * 3);
+                this.life = new Float32Array(maxCount);
+                this.maxLife = new Float32Array(maxCount);
+                this.active = new Uint8Array(maxCount);
+                this.rotation = new Float32Array(maxCount);
+                this.rotSpeed = new Float32Array(maxCount);
+
+                const geo = new THREE.BufferGeometry();
+                geo.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
+                geo.setAttribute('color', new THREE.BufferAttribute(this.colors, 3));
+                geo.setAttribute('size', new THREE.BufferAttribute(this.sizes, 1));
+                geo.setAttribute('opacity', new THREE.BufferAttribute(this.opacities, 1));
+
+                const mat = new THREE.ShaderMaterial({
+                    uniforms: { pointTexture: { value: texture } },
+                    vertexShader: `
+                        attribute float size;
+                        attribute float opacity;
+                        varying vec3 vColor;
+                        varying float vOpacity;
+                        void main() {
+                            vColor = color;
+                            vOpacity = opacity;
+                            vec4 mv = modelViewMatrix * vec4(position, 1.0);
+                            gl_PointSize = size * (320.0 / -mv.z);
+                            gl_Position = projectionMatrix * mv;
+                        }
+                    `,
+                    fragmentShader: `
+                        uniform sampler2D pointTexture;
+                        varying vec3 vColor;
+                        varying float vOpacity;
+                        void main() {
+                            vec4 tc = texture2D(pointTexture, gl_PointCoord);
+                            gl_FragColor = vec4(vColor * tc.rgb, vOpacity * tc.a);
+                            if (gl_FragColor.a < 0.005) discard;
+                        }
+                    `,
+                    transparent: true,
+                    vertexColors: true,
+                    depthWrite: false,
+                    blending: blending
+                });
+
+                this.points = new THREE.Points(geo, mat);
+                this.geometry = geo;
+                scene.add(this.points);
+            }
+
+            emit(x, y, z, vx, vy, vz, r, g, b, size, life) {
+                for (let i = 0; i < this.maxCount; i++) {
+                    if (!this.active[i]) {
+                        const i3 = i * 3;
+                        this.positions[i3] = x;
+                        this.positions[i3+1] = y;
+                        this.positions[i3+2] = z;
+                        this.velocities[i3] = vx;
+                        this.velocities[i3+1] = vy;
+                        this.velocities[i3+2] = vz;
+                        this.colors[i3] = r;
+                        this.colors[i3+1] = g;
+                        this.colors[i3+2] = b;
+                        this.sizes[i3/3] = size;
+                        this.opacities[i3/3] = 1;
+                        this.life[i] = life;
+                        this.maxLife[i] = life;
+                        this.active[i] = 1;
+                        return i;
+                    }
                 }
-            `,
-            fragmentShader: `
-                uniform sampler2D pointTexture;
-                varying vec3 vColor;
-                varying float vOpacity;
-                void main() {
-                    vec4 texColor = texture2D(pointTexture, gl_PointCoord);
-                    gl_FragColor = vec4(vColor, vOpacity) * texColor;
-                    if (gl_FragColor.a < 0.01) discard;
+                return -1;
+            }
+
+            update(dt) {
+                const pos = this.geometry.getAttribute('position');
+                const opa = this.geometry.getAttribute('opacity');
+                const siz = this.geometry.getAttribute('size');
+
+                for (let i = 0; i < this.maxCount; i++) {
+                    if (!this.active[i]) continue;
+                    const i3 = i * 3;
+
+                    this.life[i] -= dt;
+                    if (this.life[i] <= 0) {
+                        this.active[i] = 0;
+                        this.opacities[i] = 0;
+                        this.sizes[i] = 0;
+                        continue;
+                    }
+
+                    const ratio = this.life[i] / this.maxLife[i];
+
+                    // 物理
+                    this.velocities[i3]   *= 0.97;
+                    this.velocities[i3+1] *= 0.97;
+                    this.velocities[i3+1] += rand(-2, 1) * dt; // 轻微扰动
+                    this.velocities[i3+2] *= 0.97;
+
+                    this.positions[i3]   += this.velocities[i3]   * dt;
+                    this.positions[i3+1] += this.velocities[i3+1] * dt;
+                    this.positions[i3+2] += this.velocities[i3+2] * dt;
+
+                    this.opacities[i] = ratio * ratio;
+                    this.sizes[i] = this.sizes[i] * 0.998 + ratio * 0.3;
                 }
-            `,
-            transparent: true,
-            vertexColors: true,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending
+
+                pos.needsUpdate = true;
+                opa.needsUpdate = true;
+                siz.needsUpdate = true;
+            }
+        }
+
+        // 创建粒子池
+        const mainPool = new ParticlePool(CFG.explosionParticles + CFG.trailParticles, glowTex, THREE.AdditiveBlending);
+        const sparkPool = new ParticlePool(CFG.sparkParticles, sparkTex, THREE.AdditiveBlending);
+
+        // ============ 冲击波环 ============
+        const shockwaves = [];
+        const shockGeo = new THREE.PlaneGeometry(1, 1);
+        const shockMat = new THREE.MeshBasicMaterial({
+            map: ringTex, transparent: true, blending: THREE.AdditiveBlending,
+            depthWrite: false, side: THREE.DoubleSide, opacity: 0
         });
 
-        const points = new THREE.Points(geometry, material);
-        scene.add(points);
-
-        // ============ 颜色辅助 ============
-        function randomColor() {
-            const hex = CONFIG.palette[Math.floor(Math.random() * CONFIG.palette.length)];
-            const r = ((hex >> 16) & 0xff) / 255;
-            const g = ((hex >> 8) & 0xff) / 255;
-            const b = (hex & 0xff) / 255;
-            return { r, g, b };
+        function spawnShockwave(x, y, color) {
+            const mat = shockMat.clone();
+            mat.color = color;
+            const mesh = new THREE.Mesh(shockGeo, mat);
+            mesh.position.set(x, y, 0);
+            mesh.scale.set(0.1, 0.1, 0.1);
+            scene.add(mesh);
+            shockwaves.push({
+                mesh,
+                maxScale: rand(4, 7),
+                speed: rand(3, 5),
+                life: 1,
+                maxLife: 1
+            });
         }
 
-        // ============ 粒子发射 ============
-        function emitParticle(x, y, velocity, color, lifeTime, size) {
-            // 寻找空闲粒子槽
-            let idx = -1;
-            for (let i = 0; i < MAX_PARTICLES; i++) {
-                if (!active[i]) {
-                    idx = i;
-                    break;
+        // ============ 核心闪光 ============
+        const flashes = [];
+        const flashGeo = new THREE.PlaneGeometry(1, 1);
+        const flashMat = new THREE.MeshBasicMaterial({
+            map: flashTex, transparent: true, blending: THREE.AdditiveBlending,
+            depthWrite: false, opacity: 0
+        });
+
+        function spawnFlash(x, y) {
+            const mat = flashMat.clone();
+            const mesh = new THREE.Mesh(flashGeo, mat);
+            mesh.position.set(x, y, 0.1);
+            mesh.scale.set(0.1, 0.1, 0.1);
+            scene.add(mesh);
+            flashes.push({ mesh, life: 0.4, maxLife: 0.4 });
+        }
+
+        // ============ 能量闪电 ============
+        const lightningGroup = new THREE.Group();
+        scene.add(lightningGroup);
+
+        function spawnLightning(x, y, color) {
+            const segments = Math.floor(rand(5, 10));
+            const points = [];
+            let cx = x, cy = y;
+            const angle = rand(0, Math.PI * 2);
+            const totalLen = rand(2, 4);
+
+            for (let i = 0; i <= segments; i++) {
+                const t = i / segments;
+                const targetX = x + Math.cos(angle) * totalLen * t;
+                const targetY = y + Math.sin(angle) * totalLen * t;
+                points.push(new THREE.Vector3(cx, cy, 0));
+                cx = targetX + rand(-0.3, 0.3) * (1 - t);
+                cy = targetY + rand(-0.3, 0.3) * (1 - t);
+            }
+            points.push(new THREE.Vector3(cx, cy, 0));
+
+            const geo = new THREE.BufferGeometry().setFromPoints(points);
+            const mat = new THREE.LineBasicMaterial({
+                color: color, transparent: true, blending: THREE.AdditiveBlending,
+                linewidth: 2, opacity: 1
+            });
+            const line = new THREE.Line(geo, mat);
+            lightningGroup.add(line);
+
+            // 闪电生命周期
+            flashes.push({
+                mesh: line,
+                life: rand(0.15, 0.3),
+                maxLife: 0.3,
+                isLightning: true
+            });
+        }
+
+        // ============ 背景粒子 ============
+        const bgPool = new ParticlePool(CFG.bgParticles, glowTex, THREE.AdditiveBlending);
+        function initBackground() {
+            for (let i = 0; i < CFG.bgParticles; i++) {
+                const x = rand(-WORLD_W/2, WORLD_W/2);
+                const y = rand(-WORLD_H/2, WORLD_H/2);
+                const c = randColor();
+                const idx = bgPool.emit(
+                    x, y, 0,
+                    rand(-0.15, 0.15), rand(0.05, 0.2), 0,
+                    c.r, c.g, c.b,
+                    rand(0.5, 1.5),
+                    99999
+                );
+                if (idx >= 0) {
+                    bgPool.sizes[idx] = rand(0.3, 1.2);
                 }
             }
-            if (idx === -1) return; // 粒子池已满
-
-            const i3 = idx * 3;
-
-            positions[i3] = x;
-            positions[i3 + 1] = y;
-            positions[i3 + 2] = 0;
-
-            velocities[i3] = velocity.x;
-            velocities[i3 + 1] = velocity.y;
-            velocities[i3 + 2] = velocity.z;
-
-            colors[i3] = color.r;
-            colors[i3 + 1] = color.g;
-            colors[i3 + 2] = color.b;
-
-            sizes[idx] = size;
-            opacities[idx] = 1.0;
-            life[idx] = lifeTime;
-            maxLife[idx] = lifeTime;
-            active[idx] = 1;
         }
 
-        // ============ 爆炸效果 ============
-        function explode(screenX, screenY) {
-            // 屏幕坐标 → Three.js 世界坐标
+        function updateBackground(dt) {
+            const pos = bgPool.geometry.getAttribute('position');
+            const opa = bgPool.geometry.getAttribute('opacity');
+            const siz = bgPool.geometry.getAttribute('size');
+            const now = performance.now() * 0.001;
+
+            for (let i = 0; i < bgPool.maxCount; i++) {
+                if (!bgPool.active[i]) continue;
+                const i3 = i * 3;
+
+                bgPool.positions[i3]   += bgPool.velocities[i3]   * dt;
+                bgPool.positions[i3+1] += bgPool.velocities[i3+1] * dt;
+
+                // 边界循环
+                if (bgPool.positions[i3] > WORLD_W/2)  bgPool.positions[i3] = -WORLD_W/2;
+                if (bgPool.positions[i3] < -WORLD_W/2) bgPool.positions[i3] = WORLD_W/2;
+                if (bgPool.positions[i3+1] > WORLD_H/2) bgPool.positions[i3+1] = -WORLD_H/2;
+                if (bgPool.positions[i3+1] < -WORLD_H/2) bgPool.positions[i3+1] = WORLD_H/2;
+
+                // 呼吸闪烁
+                bgPool.opacities[i] = 0.15 + Math.sin(now * rand(0.5, 2) + i * 0.7) * 0.1 + 0.1;
+            }
+
+            pos.needsUpdate = true;
+            opa.needsUpdate = true;
+            siz.needsUpdate = true;
+        }
+
+        // ============ 爆炸主函数 ============
+        function energyBurst(screenX, screenY) {
+            // 屏幕坐标 → 世界坐标
             const ndcX = (screenX / window.innerWidth) * 2 - 1;
             const ndcY = -(screenY / window.innerHeight) * 2 + 1;
-            const vector = new THREE.Vector3(ndcX, ndcY, 0.5);
-            vector.unproject(camera);
-            const dir = vector.sub(camera.position).normalize();
-            const distance = -camera.position.z / dir.z;
-            const worldPos = camera.position.clone().add(dir.multiplyScalar(distance));
+            const vec = new THREE.Vector3(ndcX, ndcY, 0.5).unproject(camera);
+            const dir = vec.sub(camera.position).normalize();
+            const dist = -camera.position.z / dir.z;
+            const pos = camera.position.clone().add(dir.multiplyScalar(dist));
 
-            // 发射爆炸粒子
-            for (let i = 0; i < CONFIG.explosionCount; i++) {
-                // 随机方向（球形分布）
-                const theta = Math.random() * Math.PI * 2;
+            const baseColor = randColor();
+
+            // 1. 核心闪光
+            spawnFlash(pos.x, pos.y);
+
+            // 2. 冲击波环
+            for (let i = 0; i < CFG.shockwaveCount; i++) {
+                setTimeout(() => spawnShockwave(pos.x, pos.y, baseColor), i * 60);
+            }
+
+            // 3. 能量闪电
+            const lightningCount = Math.floor(rand(3, 6));
+            for (let i = 0; i < lightningCount; i++) {
+                spawnLightning(pos.x, pos.y, baseColor);
+            }
+
+            // 4. 主能量粒子（高速向外喷射）
+            for (let i = 0; i < CFG.explosionParticles; i++) {
+                const theta = rand(0, Math.PI * 2);
                 const phi = Math.acos(2 * Math.random() - 1);
-                const speed = CONFIG.explosionSpeed * (0.3 + Math.random() * 0.7);
+                const speed = rand(3, 10);
 
                 const vx = Math.sin(phi) * Math.cos(theta) * speed;
                 const vy = Math.sin(phi) * Math.sin(theta) * speed;
-                const vz = Math.cos(phi) * speed * 0.3; // z 轴分量较小
+                const vz = Math.cos(phi) * speed * 0.2;
 
-                const color = randomColor();
-                const lifeTime = CONFIG.explosionLife * (0.5 + Math.random() * 0.5);
-                const size = 2 + Math.random() * 4;
+                const c = Math.random() < 0.3 ? new THREE.Color(0xffffff) : baseColor.clone().offsetHSL(rand(-0.05, 0.05), rand(-0.1, 0.1), rand(-0.1, 0.1));
+                const size = rand(1.5, 4);
+                const life = rand(0.8, 2.0);
 
-                emitParticle(worldPos.x, worldPos.y, { x: vx, y: vy, z: vz }, color, lifeTime, size);
+                mainPool.emit(pos.x, pos.y, 0, vx, vy, vz, c.r, c.g, c.b, size, life);
+            }
+
+            // 5. 拖尾粒子（较慢，跟随主粒子）
+            for (let i = 0; i < CFG.trailParticles; i++) {
+                const theta = rand(0, Math.PI * 2);
+                const speed = rand(1, 4);
+                const vx = Math.cos(theta) * speed;
+                const vy = Math.sin(theta) * speed;
+
+                const c = baseColor.clone().offsetHSL(0, -0.2, 0.1);
+                const size = rand(0.8, 2);
+                const life = rand(1.0, 2.5);
+
+                mainPool.emit(pos.x, pos.y, 0, vx, vy, rand(-0.5, 0.5), c.r, c.g, c.b, size, life);
+            }
+
+            // 6. 火星/火花（小而快，带随机扰动）
+            for (let i = 0; i < CFG.sparkParticles; i++) {
+                const theta = rand(0, Math.PI * 2);
+                const speed = rand(5, 14);
+                const vx = Math.cos(theta) * speed;
+                const vy = Math.sin(theta) * speed;
+
+                const c = Math.random() < 0.5 ? new THREE.Color(0xffffff) : baseColor.clone();
+                const size = rand(0.3, 1.2);
+                const life = rand(0.3, 1.0);
+
+                sparkPool.emit(pos.x, pos.y, 0, vx, vy, rand(-1, 1), c.r, c.g, c.b, size, life);
             }
         }
 
-        // ============ 背景漂浮粒子 ============
-        function initBackgroundParticles() {
-            for (let i = 0; i < CONFIG.bgParticleCount; i++) {
-                const x = (Math.random() - 0.5) * 16;
-                const y = (Math.random() - 0.5) * 10;
-                const vx = (Math.random() - 0.5) * CONFIG.bgSpeed;
-                const vy = Math.random() * CONFIG.bgSpeed + 0.1;
-                const color = randomColor();
-                const lifeTime = 9999; // 背景粒子不会自然死亡
-                const size = 1 + Math.random() * 2;
-
-                emitParticle(x, y, { x: vx, y: vy, z: 0 }, color, lifeTime, size);
-            }
-        }
-
-        // ============ 物理更新 ============
-        function updateParticles(deltaTime) {
-            const posAttr = geometry.getAttribute('position');
-            const colorAttr = geometry.getAttribute('color');
-            const sizeAttr = geometry.getAttribute('size');
-            const opacityAttr = geometry.getAttribute('opacity');
-
-            for (let i = 0; i < MAX_PARTICLES; i++) {
-                if (!active[i]) continue;
-
-                const i3 = i * 3;
-
-                // 背景粒子：持续漂浮 + 边界循环
-                if (life[i] >= 9999) {
-                    positions[i3] += velocities[i3] * deltaTime;
-                    positions[i3 + 1] += velocities[i3 + 1] * deltaTime;
-
-                    // 边界检测：超出边界则从对面重新进入
-                    if (positions[i3] > 8) positions[i3] = -8;
-                    if (positions[i3] < -8) positions[i3] = 8;
-                    if (positions[i3 + 1] > 5) positions[i3 + 1] = -5;
-                    if (positions[i3 + 1] < -5) positions[i3 + 1] = 5;
-
-                    opacities[i] = 0.3 + Math.sin(Date.now() * 0.001 + i) * 0.15;
+        // ============ 更新冲击波和闪光 ============
+        function updateEffects(dt) {
+            // 冲击波
+            for (let i = shockwaves.length - 1; i >= 0; i--) {
+                const sw = shockwaves[i];
+                sw.life -= dt;
+                if (sw.life <= 0) {
+                    scene.remove(sw.mesh);
+                    sw.mesh.material.dispose();
+                    shockwaves.splice(i, 1);
                     continue;
                 }
-
-                // 爆炸粒子：物理模拟
-                life[i] -= deltaTime;
-                if (life[i] <= 0) {
-                    active[i] = 0;
-                    opacities[i] = 0;
-                    sizes[i] = 0;
-                    continue;
-                }
-
-                // 重力 + 阻尼
-                velocities[i3 + 1] += CONFIG.gravity * deltaTime;
-                velocities[i3] *= CONFIG.damping;
-                velocities[i3 + 1] *= CONFIG.damping;
-                velocities[i3 + 2] *= CONFIG.damping;
-
-                // 更新位置
-                positions[i3] += velocities[i3] * deltaTime;
-                positions[i3 + 1] += velocities[i3 + 1] * deltaTime;
-                positions[i3 + 2] += velocities[i3 + 2] * deltaTime;
-
-                // 透明度随生命衰减
-                const lifeRatio = life[i] / maxLife[i];
-                opacities[i] = lifeRatio;
-
-                // 尺寸随生命衰减
-                sizes[i] = sizes[i] * 0.999 + lifeRatio * 0.5;
+                const t = 1 - sw.life / sw.maxLife;
+                const scale = lerp(0.1, sw.maxScale, t);
+                sw.mesh.scale.set(scale, scale, 1);
+                sw.mesh.material.opacity = (1 - t) * 0.8;
             }
 
-            // 标记需要更新
-            posAttr.needsUpdate = true;
-            colorAttr.needsUpdate = true;
-            sizeAttr.needsUpdate = true;
-            opacityAttr.needsUpdate = true;
+            // 闪光和闪电
+            for (let i = flashes.length - 1; i >= 0; i--) {
+                const fl = flashes[i];
+                fl.life -= dt;
+                if (fl.life <= 0) {
+                    if (fl.isLightning) {
+                        lightningGroup.remove(fl.mesh);
+                        fl.mesh.geometry.dispose();
+                        fl.mesh.material.dispose();
+                    } else {
+                        scene.remove(fl.mesh);
+                        fl.mesh.material.dispose();
+                    }
+                    flashes.splice(i, 1);
+                    continue;
+                }
+                const t = fl.life / fl.maxLife;
+                if (fl.isLightning) {
+                    fl.mesh.material.opacity = t;
+                } else {
+                    const scale = lerp(0.1, 3, 1 - t);
+                    fl.mesh.scale.set(scale, scale, 1);
+                    fl.mesh.material.opacity = t * t;
+                }
+            }
         }
 
         // ============ 动画循环 ============
@@ -332,20 +548,22 @@
             requestAnimationFrame(animate);
 
             const now = performance.now();
-            const deltaTime = Math.min((now - lastTime) / 1000, 0.05); // 限制最大 delta
+            const dt = Math.min((now - lastTime) / 1000, 0.05);
             lastTime = now;
 
-            updateParticles(deltaTime);
+            mainPool.update(dt);
+            sparkPool.update(dt);
+            updateBackground(dt);
+            updateEffects(dt);
+
             renderer.render(scene, camera);
         }
 
-        // ============ 事件监听 ============
-        // 点击爆炸
+        // ============ 事件 ============
         document.addEventListener('click', (e) => {
-            explode(e.clientX, e.clientY);
+            energyBurst(e.clientX, e.clientY);
         });
 
-        // 窗口大小调整
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
@@ -353,8 +571,9 @@
         });
 
         // ============ 启动 ============
-        initBackgroundParticles();
+        initBackground();
         animate();
+    })();
     </script>
 </body>
 </html>
