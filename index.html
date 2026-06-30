@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>动态爱心特效</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            overflow: hidden;
+            font-family: 'Segoe UI', sans-serif;
+            cursor: pointer;
+        }
+
+        /* 主标题 */
+        .title {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-size: 2rem;
+            text-align: center;
+            z-index: 10;
+            text-shadow: 0 0 10px rgba(255, 105, 180, 0.8);
+            pointer-events: none;
+        }
+
+        /* 爱心样式 */
+        .heart {
+            position: fixed;
+            pointer-events: none;
+            z-index: 100;
+            animation: float 4s ease-out forwards;
+        }
+
+        .heart::before,
+        .heart::after {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background: currentColor;
+            border-radius: 50%;
+        }
+
+        .heart::before {
+            top: -50%;
+            left: 0;
+        }
+
+        .heart::after {
+            top: 0;
+            left: 50%;
+        }
+
+        @keyframes float {
+            0% {
+                opacity: 1;
+                transform: translateY(0) rotate(45deg) scale(1);
+            }
+            100% {
+                opacity: 0;
+                transform: translateY(-100vh) rotate(45deg) scale(0.5);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="title">点击屏幕，释放爱心 💖</div>
+
+    <script>
+        // 爱心颜色列表
+        const colors = [
+            '#ff6b6b', '#ff8e8e', '#ffa8a8',
+            '#ffc0cb', '#ff69b4', '#ff1493',
+            '#ff4500', '#ff6347', '#ff7f50',
+            '#ffd700', '#fffacd', '#f0e68c'
+        ];
+
+        // 生成随机爱心
+        function createHeart(x, y, size = null) {
+            const heart = document.createElement('div');
+            heart.className = 'heart';
+            
+            // 随机大小
+            const heartSize = size || Math.random() * 20 + 10;
+            heart.style.width = `${heartSize}px`;
+            heart.style.height = `${heartSize}px`;
+            
+            // 随机颜色
+            const color = colors[Math.floor(Math.random() * colors.length)];
+            heart.style.color = color;
+            
+            // 位置
+            heart.style.left = `${x}px`;
+            heart.style.top = `${y}px`;
+            
+            // 随机动画时长
+            const duration = Math.random() * 3 + 2;
+            heart.style.animationDuration = `${duration}s`;
+            
+            document.body.appendChild(heart);
+            
+            // 动画结束后移除元素
+            setTimeout(() => {
+                heart.remove();
+            }, duration * 1000);
+        }
+
+        // 点击生成爱心
+        document.addEventListener('click', (e) => {
+            // 点击位置生成主爱心
+            createHeart(e.clientX, e.clientY, 30);
+            
+            // 周围生成几个小爱心
+            for (let i = 0; i < 5; i++) {
+                const offsetX = (Math.random() - 0.5) * 100;
+                const offsetY = (Math.random() - 0.5) * 100;
+                createHeart(e.clientX + offsetX, e.clientY + offsetY);
+            }
+        });
+
+        // 自动生成爱心雨
+        function autoHeartRain() {
+            setInterval(() => {
+                const x = Math.random() * window.innerWidth;
+                const y = window.innerHeight;
+                createHeart(x, y, Math.random() * 15 + 5);
+            }, 300);
+        }
+
+        // 启动爱心雨
+        autoHeartRain();
+    </script>
+</body>
+</html>
